@@ -1,6 +1,8 @@
 import numpy as np
+from math import log2
 
-def IG(D, index, value):
+
+def IG(D: (np.ndarray,np.ndarray), index, value):
 	"""Compute the Information Gain of a split on attribute index at value
 	for dataset D.
 	
@@ -12,7 +14,57 @@ def IG(D, index, value):
 	Returns:
 		The value of the Information Gain for the given split
 	"""
-	
+	entropy_0 = get_entropy(D)
+	n = D[0].shape[0]
+	yrows = []
+	nrows = []
+	data = D[0]
+
+	# Find row indices to separate
+	for i, val in enumerate(data[:,index]):
+		if val <= value:
+			yrows.append(i)
+		else:
+			nrows.append(i)
+
+	# Split captured entire dataset on one side
+	if not nrows or not yrows:
+		return 0
+
+	# Split the data
+	Dy = np.take(data, yrows, axis=0)
+	cy = np.take(D[1], yrows)
+	Dn = np.take(data, nrows, axis=0)
+	cn = np.take(D[1], nrows)
+
+	# Calculate entropy of split data
+	entropy_dy = get_entropy((Dy,cy))
+	entropy_dn = get_entropy((Dn,cn))
+
+	ny= cy.size
+	nn = cn.size
+
+	# Calculate gain
+	gain = entropy_0 - ny/n*entropy_dy + nn/n*entropy_dn
+	return gain
+
+def get_entropy(D: (np.ndarray, np.ndarray)):
+	"""
+	Determine the entropy of the dataset
+	:param D:
+	"""
+	prob = class_probability(D[1])
+	entropy = -(prob*log2(prob) + (1-prob)*log2(1-prob))
+	return entropy
+
+
+def class_probability(c: np.ndarray):
+	"""
+	Since the classifier is binary, we can sum the 1s and 0s then divide by the count to find the probability
+	:param c:
+	:return:
+	"""
+	return c.sum() / c.size
 
 
 def G(D, index, value):
@@ -54,11 +106,12 @@ def bestSplit(D, criterion):
 		A tuple (i, value) where i is the index of the attribute to split at value
 	"""
 
-	#functions are first class objects in python, so let's refer to our desired criterion by a single name
+
+# functions are first class objects in python, so let's refer to our desired criterion by a single name
 
 
-def load(filename):
-	"""Loads filename as a dataset. Assumes the last column is classes, and 
+def load(filename) -> (np.ndarray, np.ndarray):
+	"""Loads filename as a dataset. Assumes the last column is classes, and
 	observations are organized as rows.
 
 	Args:
@@ -71,10 +124,10 @@ def load(filename):
 	"""
 
 	matrix = np.genfromtxt(filename, delimiter=',')
-	classes = np.copy(matrix[:,-1])
+	classes = np.copy(matrix[:, -1])
 	matrix = np.delete(matrix, -1, axis=1)
 
-	return(matrix, classes)
+	return (matrix, classes)
 
 
 def classifyIG(train, test):
@@ -116,7 +169,6 @@ def classifyCART(train, test):
 	"""
 
 
-
 def main():
 	"""This portion of the program will run when run only when main() is called.
 	This is good practice in python, which doesn't have a general entry point 
@@ -124,14 +176,17 @@ def main():
 	This way, when you <import HW2>, no code is run - only the functions you
 	explicitly call.
 	"""
-	
 
 
-if __name__=="__main__": 
+if __name__ == "__main__":
 	"""__name__=="__main__" when the python script is run directly, not when it 
 	is imported. When this program is run from the command line (or an IDE), the 
 	following will happen; if you <import HW2>, nothing happens unless you call
 	a function.
 	"""
 	# main()
-	load('train.txt')
+	contents = load('train.txt')
+	i, v = 1, 35
+	gain = IG(contents, i, v)
+
+	print(f'Gain from a split on column {i} at value {v} is: +{gain}')
