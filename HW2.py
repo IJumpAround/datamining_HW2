@@ -1,15 +1,20 @@
 import logging
 import sys
+import datetime
 from math import log2
-from typing import Tuple, Callable
-
+from operator import itemgetter
+from typing import Tuple, Callable, Iterable, Iterator
 import numpy as np
 
+Data = Tuple[np.ndarray, np.ndarray]
+Measure = Callable[[Data, int, int], float]
+
+methods = ['GINI', "CART", 'IG']
+
+TREE_LEVELS = 2
 
 
-
-
-def IG(D: (np.ndarray, np.ndarray), index, value):
+def IG(D: Data, index, value):
     """Compute the Information Gain of a split on attribute index at value
     for dataset D.
 
@@ -27,14 +32,13 @@ def IG(D: (np.ndarray, np.ndarray), index, value):
     n = data.shape[0]
     classes = D[1]
 
-    Dy,cy,Dn,cn = split_data((data,classes), index, value)
+    Dy, cy, Dn, cn = split_data((data, classes), index, value)
 
     # Calculate entropy of split data
     entropy_dy = get_entropy((Dy, cy))
+    entropy_dy = entropy_dy if not np.isnan(entropy_dy) else 0
     entropy_dn = get_entropy((Dn, cn))
-    logging.debug(f'entropy_0:  {entropy_0}')
-    logging.debug(f'entropy dn: {entropy_dn}')
-    logging.debug(f'entropy dy: {entropy_dy}')
+    entropy_dn = entropy_dn if not np.isnan(entropy_dn) else 0
 
     # Count of each partition
     ny = cy.size
@@ -73,30 +77,27 @@ def split_data(D: Tuple[np.ndarray, np.ndarray], index, value) -> Tuple[np.ndarr
     data = D[0]
     yrows = []
     nrows = []
-    for i, val in enumerate(data[:, index]):
-        if val <= value:
-            yrows.append(i)
-        else:
-            nrows.append(i)
+    try:
+        for i, val in enumerate(data[:, index]):
+            if val <= value:
+                yrows.append(i)
+            else:
+                nrows.append(i)
+    except IndexError as e:
+        logging.error(e)
+        logging.error(data)
+        logging.error(index)
 
     # Split captured entire dataset on one side
     if not nrows or not yrows:
-        return 0
+        pass
+        # return 0
 
     # Split the data
     Dy = np.take(data, yrows, axis=0)
     cy = np.take(D[1], yrows)
     Dn = np.take(data, nrows, axis=0)
     cn = np.take(D[1], nrows)
-
-    logging.debug(f'Original data:\n'
-                  f'{D[0]}\n'
-                  f'{D[1]}\n')
-    logging.debug(f'Resulting split:\n'
-                  f'Dy:\n {Dy}\n'
-                  f'Dn:\n {Dn}\n'
-                  f'cy:\n {cy}\n'
-                  f'cn:\n {cn}\n')
 
     return Dy, cy, Dn, cn
 
@@ -126,21 +127,21 @@ def G(D, index, value):
     y = D[1]  # classes
 
     # Get split and relevant info
-    Dy, cy, Dn, cn = split_data((X,y), index, value)
+    Dy, cy, Dn, cn = split_data(D, index, value)
     n = X.shape[0]
     ny = cy.size
     nn = cn.size
 
     gy = _GI(cy)
     gn = _GI(cn)
-    g_total = ny/n*gy + nn/n*gn
+    g_total = ny / n * gy + nn / n * gn
 
-    logging.debug(f'Calculated Gini index of this split is: {g_total}')
     return g_total
+
 
 def _GI(classes):
     prob = class_probability(classes)
-    return 1-(prob**2 + ((1-prob)**2))
+    return 1 - ((prob ** 2) + ((1 - prob) ** 2))
 
 
 def CART(D, index, value):
@@ -165,12 +166,12 @@ def CART(D, index, value):
     ny = cy.size
     nn = cn.size
 
-    summation = abs(p_cy - p_cn) + abs((1-p_cy) - (1-p_cn))
-    cart = 2 * (ny/n)* (nn/n) * summation
+    summation = abs(p_cy - p_cn) + abs((1 - p_cy) - (1 - p_cn))
+    cart = 2 * (ny / n) * (nn / n) * summation
     return cart
 
 
-def bestSplit(D, criterion):
+def bestSplit(D: Data, criterion: str):
     """Computes the best split for dataset D using the specified criterion
 
     Args:
@@ -180,13 +181,37 @@ def bestSplit(D, criterion):
     Returns:
         A tuple (i, value) where i is the index of the attribute to split at value
     """
+    # Get our measure function and aggregate (either max() or min()) from the dispatcher
+    measure, aggregate = dispatcher(criterion)
+
+    # Call the aggregate function on our iterable telling it to compare the value of each tuple returned
+    iterable = split_generator(D, measure)
+    index, score, value = aggregate(iterable, key=itemgetter(1))
+    return index, value
 
 
+def split_generator(D: Data, measure: Measure) -> Iterator[Tuple[int, float, int]]:
+    """
+    Use a generator to return an iterator over all values in the matrix. Return a tuple with the row index
+    plus the value of the current cell.
+    :param D: Data tuple
+    :param measure: Callable referring to the measure calculating the effectiveness of our split
+    :yi
+    """
+    dims = D[0].shape
+    data = D[0]
+    full_data = [(col, measure(D, col, data[row, col]), data[row, col]) for row in range(dims[0]) for col in
+                 range(dims[1])]
+    return full_data
+    # Generators are real slow lol
+    # for row in range(dims[0]):
+    #     for col in range(dims[1]):
+    #         logging.debug(f'row {row} col{col} value{data[row,col]}')
+    #         full_data.append(col, measure(D, col, data[row,col] ))
+    #         # yield col, measure(D, col, data[row, col]), data[row,col]
 
-# functions are first class objects in python, so let's refer to our desired criterion by a single name
 
-
-def load(filename)-> Tuple[np.ndarray, np.ndarray]:
+def load(filename: str) -> Tuple[np.ndarray, np.ndarray]:
     """Loads filename as a dataset. Assumes the last column is classes, and
     observations are organized as rows.
 
@@ -217,6 +242,15 @@ def classifyIG(train, test):
     Returns:
         A list of predicted classes for observations in test (in order)
     """
+    criterion = 'IG'
+    dTree = DecisionTree(criterion)
+    dTree.gen_tree(train, TREE_LEVELS)
+
+    classification = [int(dTree.classify(row)) for row in test[0]]
+
+    logging.info(f"Predicted classes for test data: {classification}")
+    logging.info(f"Actual classification:           {test[1]} ")
+    return classification
 
 
 def classifyG(train, test):
@@ -230,6 +264,15 @@ def classifyG(train, test):
     Returns:
         A list of predicted classes for observations in test (in order)
     """
+    criterion = 'GINI'
+    dTree = DecisionTree(criterion)
+    dTree.gen_tree(train, TREE_LEVELS)
+
+    classification = [int(dTree.classify(row)) for row in test[0]]
+
+    logging.info(f"Predicted classes for test data: {classification}")
+    logging.info(f"Actual classification:           {test[1]} ")
+    return classification
 
 
 def classifyCART(train, test):
@@ -243,6 +286,137 @@ def classifyCART(train, test):
     Returns:
         A list of predicted classes for observations in test (in order)
     """
+    criterion = 'CART'
+    dTree = DecisionTree(criterion)
+    dTree.gen_tree(train,TREE_LEVELS)
+
+    classification = [int(dTree.classify(row)) for row in test[0]]
+
+    logging.info(f"Predicted classes for test data: {classification}")
+    logging.info(f"Actual classification::          {test[1]} ")
+    return classification
+
+
+def dispatcher(name: str) -> Tuple[Measure,
+                                   Callable[[Iterable, Callable], float]]:
+    """
+    Return the callable associated with the given name. Also returns the correct comparator function
+    associated with each measure.
+    :param name: name of the function we are looking to execute
+    :return: evaluation measure, comparator
+    """
+    registry = {
+        "IG": (IG, max),
+        "GINI": (G, min),
+        "CART": (CART, max)
+    }
+    return registry[name]
+
+
+class Node:
+    def __init__(self):
+        self._left: Node = None
+        self._right: Node = None
+        self._split_value = None
+        self._split_index = None
+        self._class_prob = None
+
+    @property
+    def left(self):
+        return self._left
+
+    @left.setter
+    def left(self, n: 'Node'):
+        self._left = n
+
+    @property
+    def right(self):
+        return self._right
+
+    @right.setter
+    def right(self, value: 'Node'):
+        self._right = value
+
+    @property
+    def value(self):
+        return self._split_value
+
+    @value.setter
+    def value(self, val):
+        self._split_value = val
+
+    @property
+    def index(self):
+        return self._split_index
+
+    @index.setter
+    def index(self, val):
+        self._split_index = val
+
+    @property
+    def prob(self):
+        return self._class_prob
+
+    @prob.setter
+    def prob(self, val):
+        self._class_prob = val
+
+
+class DecisionTree:
+    def __init__(self, criterion: str):
+        self._root: Node = Node()
+        self._eval = bestSplit
+        self._criterion = criterion
+
+    def gen_tree(self, D: Data, levels):
+        logging.info(f'Training decision tree using {self._criterion} evaluator')
+        self.decision_tree(D, self._root, levels)
+
+    def eval(self, data: Data) -> Tuple[int, int]:
+        return self._eval(data, self._criterion)
+
+    def decision_tree(self, D: Data, curr: Node, levels):
+        prob = class_probability(D[1])
+        if not D or D[1].size <= 1 or prob == 1 or prob == 0 or levels == 0:  # probably need to do something else here
+            logging.debug('break')
+            return
+        try:
+            index, value = self.eval(D)
+            Dy, cy, Dn, cn = split_data(D, index=index, value=value)
+            # Check for split that didn't modify original data
+            if np.array_equal(Dy, D[0]) or np.array_equal(Dn, D[0]):
+                return
+            curr.index = index
+            curr.value = value
+            curr.prob = prob
+
+            curr.left = Node()
+            curr.right = Node()
+            logging.debug(f'Left: {Dy.shape[0]}')
+            self.decision_tree((Dy, cy), curr.left, levels-1)
+            logging.debug(f'Right: {Dn.shape[0]}')
+            self.decision_tree((Dn, cn), curr.right, levels-1)
+        except AttributeError as e:
+            logging.error(e)
+            logging.error(D)
+            logging.error(self)
+
+    def classify(self, row: np.ndarray):
+        return self._rClassify(self._root, row)
+
+    def _rClassify(self, curr: Node, row: np.ndarray):
+
+        try:
+            val = row[curr.index]
+            c = curr.prob >= 0.500000
+        except (TypeError, AttributeError):
+            return None
+        if val <= curr.value:
+            left = self._rClassify(curr.left, row)
+            return left if left is not None else c
+        else:
+            right = self._rClassify(curr.right, row)
+            return right if right is not None else c
 
 
 def main():
@@ -252,26 +426,55 @@ def main():
     This way, when you <import HW2>, no code is run - only the functions you
     explicitly call.
     """
-    contents = load('test.txt')
-    i, v = 1, 35
+    contents = load('train.txt')
+    test = load('test.txt')
+    train = contents
+    results = []
+
+    logging.info('running classify')
+    results.append(classifyIG(train, test))
+    logging.info('done running classify')
+
+    logging.info('\n\nBeginning CART classify')
+    results.append(classifyCART(train, test))
+    logging.info('Finished CART classify')
+
+    logging.info('\n\nBeginning Ginni classify')
+    results.append(classifyG(train, test))
+    logging.info('Finished Ginni classify')
+
+
+    logging.info('\n')
+    logging.info('Finished all three classifiers')
+    logging.info('Results:')
+    logging.info(f'Information Gain: {results[0]}')
+    logging.info(f'CART:             {results[1]}')
+    logging.info(f'Gini Index:       {results[2]}')
+    logging.info(f'Actual:           {test[1]}')
+    return
+    i, v = 2, 0
+    split_method = "GINI"
     gain = IG(contents, i, v)
     ginni = G(contents, i, v)
+
+    index, value = bestSplit(contents, split_method)
+    logging.info(f'Dataset:\n{contents[0]}')
     logging.info(f'Gain from a split on column {i} at value {v} is: +{gain:.4f}')
     logging.info(f'Ginni index split on column {i} at value {v} is {ginni:.4f}')
 
+    optimized = []
 
-def dispatcher(name: str) -> Callable:
-    """
-    Return the callable associated with the given name
-    :param name: name of the function we are looking to execute
-    :return: The correct function
-    """
-    registry = {
-        "IG": IG,
-        "GINI": G,
-        "CART": CART
-    }
-    return registry[name]
+    # start = datetime.datetime.now()
+    # for method in methods:
+    #     index,value =bestSplit(contents, method)
+    #     optimized.append((method, index, value))
+    # end = datetime.datetime.now()
+    #
+    # diff = end-start
+    # logging.info(f'Calculated best split for GINI IG & CART in {diff}')
+    # for method, index, value in optimized:
+    #     logging.info(f'\n\nCalculated best {method} split on input data with shape {contents[0].shape}\n'
+    #                  f'Best split is on attribute index: {index} with value {value}')
 
 
 if __name__ == "__main__":
@@ -287,9 +490,7 @@ if __name__ == "__main__":
         debug = False
     print(f'Debug mode: {debug}')
 
-    level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(level=level, format='%(levelname)s: %(message)s')
+    log_level = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(level=log_level, format='%(levelname)s: %(message)s')
 
     main()
-
-
