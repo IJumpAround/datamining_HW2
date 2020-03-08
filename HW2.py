@@ -1,9 +1,10 @@
 import logging
 import sys
 from math import log2
-from typing import Tuple
+from typing import Tuple, Callable
 
 import numpy as np
+
 
 
 
@@ -31,13 +32,16 @@ def IG(D: (np.ndarray, np.ndarray), index, value):
     # Calculate entropy of split data
     entropy_dy = get_entropy((Dy, cy))
     entropy_dn = get_entropy((Dn, cn))
+    logging.debug(f'entropy_0:  {entropy_0}')
+    logging.debug(f'entropy dn: {entropy_dn}')
+    logging.debug(f'entropy dy: {entropy_dy}')
 
     # Count of each partition
     ny = cy.size
     nn = cn.size
 
     # Calculate gain
-    gain = entropy_0 - ny / n * entropy_dy + nn / n * entropy_dn
+    gain = entropy_0 - (ny / n * entropy_dy + nn / n * entropy_dn)
     return gain
 
 
@@ -55,7 +59,7 @@ def get_entropy(D: (np.ndarray, np.ndarray)):
     return entropy
 
 
-def split_data(D: (np.ndarray, np.ndarray), index, value) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def split_data(D: Tuple[np.ndarray, np.ndarray], index, value) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Given a data set with binary classifiers split the data set such we have two data sets after splitting.
     The first contains all rows of D where the value of attribute[index]  <= value
@@ -121,6 +125,23 @@ def G(D, index, value):
     X = D[0]  # data
     y = D[1]  # classes
 
+    # Get split and relevant info
+    Dy, cy, Dn, cn = split_data((X,y), index, value)
+    n = X.shape[0]
+    ny = cy.size
+    nn = cn.size
+
+    gy = _GI(cy)
+    gn = _GI(cn)
+    g_total = ny/n*gy + nn/n*gn
+
+    logging.debug(f'Calculated Gini index of this split is: {g_total}')
+    return g_total
+
+def _GI(classes):
+    prob = class_probability(classes)
+    return 1-(prob**2 + ((1-prob)**2))
+
 
 def CART(D, index, value):
     """Compute the CART measure of a split on attribute index at value
@@ -134,6 +155,19 @@ def CART(D, index, value):
     Returns:
         The value of the CART measure for the given split
     """
+    classes = D[1]
+    n = classes.size
+
+    Dy, cy, Dn, cn = split_data(D, index, value)
+
+    p_cy = class_probability(cy)
+    p_cn = class_probability(cn)
+    ny = cy.size
+    nn = cn.size
+
+    summation = abs(p_cy - p_cn) + abs((1-p_cy) - (1-p_cn))
+    cart = 2 * (ny/n)* (nn/n) * summation
+    return cart
 
 
 def bestSplit(D, criterion):
@@ -148,10 +182,11 @@ def bestSplit(D, criterion):
     """
 
 
+
 # functions are first class objects in python, so let's refer to our desired criterion by a single name
 
 
-def load(filename) -> (np.ndarray, np.ndarray):
+def load(filename)-> Tuple[np.ndarray, np.ndarray]:
     """Loads filename as a dataset. Assumes the last column is classes, and
     observations are organized as rows.
 
@@ -220,8 +255,23 @@ def main():
     contents = load('test.txt')
     i, v = 1, 35
     gain = IG(contents, i, v)
+    ginni = G(contents, i, v)
+    logging.info(f'Gain from a split on column {i} at value {v} is: +{gain:.4f}')
+    logging.info(f'Ginni index split on column {i} at value {v} is {ginni:.4f}')
 
-    print(f'Gain from a split on column {i} at value {v} is: +{gain}')
+
+def dispatcher(name: str) -> Callable:
+    """
+    Return the callable associated with the given name
+    :param name: name of the function we are looking to execute
+    :return: The correct function
+    """
+    registry = {
+        "IG": IG,
+        "GINI": G,
+        "CART": CART
+    }
+    return registry[name]
 
 
 if __name__ == "__main__":
@@ -236,6 +286,7 @@ if __name__ == "__main__":
     except IndexError:
         debug = False
     print(f'Debug mode: {debug}')
+
     level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(level=level, format='%(levelname)s: %(message)s')
 
