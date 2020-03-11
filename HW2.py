@@ -431,18 +431,9 @@ def main():
     train = contents
     results = []
 
-    logging.info('running classify')
     results.append(classifyIG(train, test))
-    logging.info('done running classify')
-
-    logging.info('\n\nBeginning CART classify')
     results.append(classifyCART(train, test))
-    logging.info('Finished CART classify')
-
-    logging.info('\n\nBeginning Ginni classify')
     results.append(classifyG(train, test))
-    logging.info('Finished Ginni classify')
-
 
     logging.info('\n')
     logging.info('Finished all three classifiers')
