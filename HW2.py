@@ -1,3 +1,4 @@
+import argparse
 import logging
 import sys
 import datetime
@@ -11,7 +12,7 @@ Measure = Callable[[Data, int, int], float]
 
 methods = ['GINI', "CART", 'IG']
 
-TREE_LEVELS = 2
+MAX_TREE_LEVELS = 1
 
 
 def IG(D: Data, index, value):
@@ -187,6 +188,7 @@ def bestSplit(D: Data, criterion: str):
     # Call the aggregate function on our iterable telling it to compare the value of each tuple returned
     iterable = split_generator(D, measure)
     index, score, value = aggregate(iterable, key=itemgetter(1))
+    logging.debug(f'Best split found at index: {index} on value: {value}')
     return index, value
 
 
@@ -244,7 +246,7 @@ def classifyIG(train, test):
     """
     criterion = 'IG'
     dTree = DecisionTree(criterion)
-    dTree.gen_tree(train, TREE_LEVELS)
+    dTree.gen_tree(train, MAX_TREE_LEVELS)
 
     classification = [int(dTree.classify(row)) for row in test[0]]
 
@@ -266,7 +268,7 @@ def classifyG(train, test):
     """
     criterion = 'GINI'
     dTree = DecisionTree(criterion)
-    dTree.gen_tree(train, TREE_LEVELS)
+    dTree.gen_tree(train, MAX_TREE_LEVELS)
 
     classification = [int(dTree.classify(row)) for row in test[0]]
 
@@ -288,7 +290,7 @@ def classifyCART(train, test):
     """
     criterion = 'CART'
     dTree = DecisionTree(criterion)
-    dTree.gen_tree(train,TREE_LEVELS)
+    dTree.gen_tree(train, MAX_TREE_LEVELS)
 
     classification = [int(dTree.classify(row)) for row in test[0]]
 
@@ -378,6 +380,8 @@ class DecisionTree:
     def decision_tree(self, D: Data, curr: Node, levels):
         prob = class_probability(D[1])
         if not D or D[1].size <= 1 or prob == 1 or prob == 0 or levels == 0:  # probably need to do something else here
+            curr.prob = prob
+
             logging.debug('break')
             return
         try:
@@ -411,12 +415,15 @@ class DecisionTree:
             c = curr.prob >= 0.500000
         except (TypeError, AttributeError):
             return None
-        if val <= curr.value:
-            left = self._rClassify(curr.left, row)
-            return left if left is not None else c
-        else:
-            right = self._rClassify(curr.right, row)
-            return right if right is not None else c
+        try:
+            if val <= curr.value:
+                left = self._rClassify(curr.left, row)
+                return left if left is not None else c
+            else:
+                right = self._rClassify(curr.right, row)
+                return right if right is not None else c
+        except TypeError:
+            return curr.prob >= .500000
 
 
 def main():
@@ -483,7 +490,8 @@ if __name__ == "__main__":
     following will happen; if you <import HW2>, nothing happens unless you call
     a function.
     """
-
+    # args = argparse.ArgumentParser
+    # args.add_argument()
     try:
         debug = sys.argv[1]
     except IndexError:
