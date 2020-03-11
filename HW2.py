@@ -1,7 +1,5 @@
 import argparse
 import logging
-import sys
-import datetime
 from math import log2
 from operator import itemgetter
 from typing import Tuple, Callable, Iterable, Iterator
@@ -13,7 +11,7 @@ Measure = Callable[[Data, int, int], float]
 methods = ['GINI', "CART", 'IG']
 
 MAX_TREE_LEVELS = 1
-
+CONFIG = {}
 
 def IG(D: Data, index, value):
     """Compute the Information Gain of a split on attribute index at value
@@ -250,8 +248,8 @@ def classifyIG(train, test):
 
     classification = [int(dTree.classify(row)) for row in test[0]]
 
-    logging.info(f"Predicted classes for test data: {classification}")
-    logging.info(f"Actual classification:           {test[1]} ")
+    logging.debug(f"Predicted classes for test data: {classification}")
+    logging.debug(f"Actual classification:           {test[1]} ")
     return classification
 
 
@@ -272,8 +270,8 @@ def classifyG(train, test):
 
     classification = [int(dTree.classify(row)) for row in test[0]]
 
-    logging.info(f"Predicted classes for test data: {classification}")
-    logging.info(f"Actual classification:           {test[1]} ")
+    logging.debug(f"Predicted classes for test data: {classification}")
+    logging.debug(f"Actual classification:           {test[1]} ")
     return classification
 
 
@@ -294,8 +292,8 @@ def classifyCART(train, test):
 
     classification = [int(dTree.classify(row)) for row in test[0]]
 
-    logging.info(f"Predicted classes for test data: {classification}")
-    logging.info(f"Actual classification::          {test[1]} ")
+    logging.debug(f"Predicted classes for test data: {classification}")
+    logging.debug(f"Actual classification::          {test[1]} ")
     return classification
 
 
@@ -433,8 +431,8 @@ def main():
     This way, when you <import HW2>, no code is run - only the functions you
     explicitly call.
     """
-    contents = load('train.txt')
-    test = load('test.txt')
+    contents = load(CONFIG['train'])
+    test = load(CONFIG['test'])
     train = contents
     results = []
 
@@ -481,15 +479,15 @@ if __name__ == "__main__":
     following will happen; if you <import HW2>, nothing happens unless you call
     a function.
     """
-    # args = argparse.ArgumentParser
-    # args.add_argument()
-    try:
-        debug = sys.argv[1]
-    except IndexError:
-        debug = False
-    print(f'Debug mode: {debug}')
+    parser = argparse.ArgumentParser(description='Create decision trees and classify data')
+    parser.add_argument('--train', type=str, help='training input file.')
+    parser.add_argument('--test',  type=str, help='test input file')
+    parser.add_argument('--debug', '-d', help='Enable debug logging statements', action="store_true")
+    args = parser.parse_args()
 
-    log_level = logging.DEBUG if debug else logging.INFO
+    CONFIG['train'] = 'train.txt' if not args.train else args.train
+    CONFIG['test'] = 'test.txt' if not args.test else args.test
+    log_level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(level=log_level, format='%(levelname)s: %(message)s')
 
     main()
